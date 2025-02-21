@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>社区投票系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.31.0/lib/index.iife.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .container {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .topic-list {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .topic-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .option-list {
+            margin-top: 10px;
+        }
+        
+        .option-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        .status-filter {
+            margin-bottom: 20px;
+        }
+        
+        .records-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .records-table th,
+        .records-table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>社区投票系统</h1>
+    
+    <div class="container">
+        <button id="connectWallet" class="btn">连接钱包</button>
+        <span id="walletAddress"></span>
+    </div>
+    
+    <div class="container">
+        <div class="status-filter">
+            <button class="btn" data-status="upcoming">即将开始</button>
+            <button class="btn" data-status="active">进行中</button>
+            <button class="btn" data-status="ended">已结束</button>
+        </div>
+        
+        <div id="topicList" class="topic-list"></div>
+    </div>
+    
+    <script>
+        let walletAddress = null;
+        const API_BASE_URL = 'http://localhost:3000/api';
+        
+        async function connectWallet() {
+            try {
+                if (!window.solana || !window.solana.isPhantom) {
+                    alert('请安装 Phantom 钱包!');
+                    return;
+                }
+                
+                const resp = await window.solana.connect();
+                walletAddress = resp.publicKey.toString();
+                $('#walletAddress').text('钱包地址: ' + walletAddress);
+                $('#connectWallet').prop('disabled', true);
+                
+                loadTopics('active');
+            } catch (err) {
+                console.error('连接钱包失败:', err);
+                alert('连接钱包失败');
+            }
+        }
+        
+        async function loadTopics(status) {
+            try {
+                const response = await $.get(`${API_BASE_URL}/topics?status=${status}`);
+                const topicList = $('#topicList');
+                topicList.empty();
+                
+                response.forEach(topic => {
+                    const topicElement = $(`
+                        <div class="topic-card">
+                            <h3>${topic.title}</h3>
+                            <p>开始时间: ${new Date(topic.start_time).toLocaleString()}</p>
+                            <p>结束时间: ${new Date(topic.end_time).toLocaleString()}</p>
+                            <div class="option-list" id="options-${topic.id}"></div>
+                            <div class="records" id="records-${topic.id}"></div>
+                        </div>
+                    `);
+                    
+                    topicList.append(topicElement);
+                    loadTopicDetails(topic.id);
+                });
+            } catch (err) {
+                console.error('加载主题失败:', err);
+            }
+        }
+        
+        async function loadTopicDetails(topicId) {
+            try {
+                const response = await $.get(`${API_BASE_URL}/topics/${topicId}`);
+                const optionsContainer = $(`#options-${topicId}`);
+                optionsContainer.empty();
+                
+                response.options.forEach(option => {
+                    const optionElement = $(`
+                        <div class="option-item">
+                            <input type="radio" name="topic-${topicId}" value="${option.id}">
+                            <label>${option.option_text}</label>
+                            <span>(${option.vote_count} 票)</span>
+                        </div>
+                    `);
+                    optionsContainer.append(optionElement);
+                });
+                
+                const voteButton = $(`
+                    <button class="btn vote-btn" data-topic-id="${topicId}">
+                        投票
+                    </button>
+                `);
+                optionsContainer.append(voteButton);
+                
+                loadTopicRecords(topicId);
+            } catch (err) {
+                console.error('加载主题详情失败:', err);
+            }
+        }
+        
+        async function submitVote(topicId) {
+            try {
+                if (!walletAddress) {
+                    alert('请先连接钱包');
+                    return;
+                }
+                
+                const selectedOption = $(`input[name="topic-${topicId}"]:checked`).val();
+                if (!selectedOption) {
+                    alert('请选择一个选项');
+                    return;
+                }
+                
+                await $.ajax({
+                    url: `${API_BASE_URL}/vote`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        topicId,
+                        optionId: selectedOption,
+                        walletAddress
+                    })
+                });
+                
+                alert('投票成功！');
+                loadTopicDetails(topicId);
+            } catch (err) {
+                alert(err.responseJSON?.error || '投票失败');
+            }
+        }
+        
+        async function loadTopicRecords(topicId) {
+            try {
+                const response = await $.get(`${API_BASE_URL}/topics/${topicId}/records`);
+                const recordsContainer = $(`#records-${topicId}`);
+                recordsContainer.empty();
+                
+                const table = $(`
+                    <table class="records-table">
+                        <thead>
+                            <tr>
+                                <th>钱包地址</th>
+                                <th>投票选项</th>
+                                <th>投票数量</th>
+                                <th>投票时间</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                `);
+                
+                response.forEach(record => {
+                    const row = $(`
+                        <tr>
+                            <td>${record.wallet_address}</td>
+                            <td>${record.option_text}</td>
+                            <td>${record.vote_amount}</td>
+                            <td>${new Date(record.created_at).toLocaleString()}</td>
+                        </tr>
+                    `);
+                    table.find('tbody').append(row);
+                });
+                
+                recordsContainer.append(table);
+            } catch (err) {
+                console.error('加载投票记录失败:', err);
+            }
+        }
+        
+        $(document).ready(() => {
+            $('#connectWallet').click(connectWallet);
+            
+            $('.status-filter button').click(function() {
+                const status = $(this).data('status');
+                loadTopics(status);
+            });
+            
+            $(document).on('click', '.vote-btn', function() {
+                const topicId = $(this).data('topic-id');
+                submitVote(topicId);
+            });
+            
+            // 默认加载进行中的投票
+            loadTopics('active');
+        });
+    </script>
+</body>
+</html> 

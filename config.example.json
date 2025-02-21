@@ -1,0 +1,18 @@
+{
+  "database": {
+    "host": "localhost",
+    "user": "your_username",
+    "password": "your_password",
+    "database": "vote_system",
+    "waitForConnections": true,
+    "connectionLimit": 10,
+    "queueLimit": 0
+  },
+  "solana": {
+    "network": "https://api.mainnet-beta.solana.com",
+    "stonksTokenAddress": "your_stonks_token_address"
+  },
+  "server": {
+    "port": 3000
+  }
+} 
