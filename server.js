@@ -7,7 +7,7 @@ const config = require('./config.json');
 const ErrorCodes = require('./constants/errorCodes');
 const Response = require('./utils/response');
 const Lock = require('./utils/lock');
-const bs58 = require('bs58');
+const Base58 = require('bs58');
 const nacl = require('tweetnacl');
 
 const app = express();
@@ -171,7 +171,7 @@ app.post('/api/vote', async (req, res) => {
         
         try {
             const publicKey = new PublicKey(walletAddress);
-            const signatureUint8 = bs58.decode(signature);
+            const signatureUint8 = Base58.decode(signature);
             const messageUint8 = new TextEncoder().encode(message);
             
             const isValid = nacl.sign.detached.verify(

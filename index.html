@@ -473,7 +473,7 @@
                     
                     debug.log('Vote', 'Got signature', { signature });
 
-                    // 提交投票，不包含 nonce 参数
+                    // 提交投票
                     const response = await $.ajax({
                         url: `${API_BASE_URL}/vote`,
                         method: 'POST',
@@ -483,34 +483,30 @@
                             optionId: selectedOption,
                             walletAddress,
                             signature,
-                            message: messageContent  // 包含完整的签名消息供后端验证
+                            message: messageContent
                         })
                     });
 
                     debug.log('Vote', 'Submit response', response);
 
                     if (response.code === 0) {
-                        // 更新显示的投票数
-                        const voteData = response.data;
-                        $(`#option-${voteData.optionId}-votes`).text(voteData.totalVotes);
-                        
                         alert('投票成功！');
-                        // 刷新投票数据
                         loadTopics('active');
                     } else {
-                        throw new Error(response.message || '投票失败');
+                        throw new Error(response.message);  // 使用服务器返回的错误消息
                     }
                 } catch (err) {
                     debug.error('Vote', 'Signature error', err);
                     if (err.code === 4001) {
                         alert('用户拒绝了签名请求');
                     } else {
-                        throw err;
+                        throw err;  // 将错误传递给外层 catch
                     }
                 }
             } catch (err) {
                 debug.error('Vote', 'Submit error', err);
-                alert(err.message || '提交投票失败');
+                // 显示具体的错误信息
+                alert(err.responseJSON?.message || err.message || '提交投票失败');
             }
         }
         
