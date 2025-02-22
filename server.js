@@ -93,7 +93,16 @@ app.get('/api/topics/:id', async (req, res) => {
             [req.params.id]
         );
 
-        res.json(Response.success({ topic, options }));
+        // Convert BigInt to string for vote_count
+        const formattedOptions = options.map(option => ({
+            ...option,
+            vote_count: option.vote_count.toString()
+        }));
+
+        res.json(Response.success({ 
+            topic, 
+            options: formattedOptions 
+        }));
     } catch (error) {
         console.error('Failed to get topic details:', error);
         res.status(400).json(Response.error(error.code ? error : ErrorCodes.SYSTEM_ERROR));

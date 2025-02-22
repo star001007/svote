@@ -56,152 +56,313 @@ npm start
 
 ## API 文档
 
-### 通用说明
-
-#### 响应格式
-所有接口返回格式统一为：
-```json
+### Common Response Format
+All APIs follow this response format:
+```typescript
 {
-    "errno": 0,        // 错误码，0表示成功
-    "errmsg": "Success", // 错误信息
-    "data": {}         // 响应数据
+    code: number;      // Error code, 0 means success
+    data: any;        // Response data
+    message?: string; // Error message if code !== 0
 }
 ```
 
-#### 错误码说明
-| 错误码 | 说明 | 描述 |
-|--------|------|------|
-| 0 | SUCCESS | 成功 |
-| 10001 | SYSTEM_ERROR | 系统错误 |
-| 10002 | INVALID_PARAMS | 无效参数 |
-| 10003 | DB_ERROR | 数据库错误 |
-| 10004 | CONCURRENT_OPERATION | 操作正在进行中 |
-| 20001 | WALLET_ERROR | 钱包余额获取失败 |
-| 20002 | INSUFFICIENT_BALANCE | STONKS余额不足 |
-| 30001 | TOPIC_NOT_FOUND | 投票主题不存在 |
-| 30002 | TOPIC_NOT_ACTIVE | 投票主题未启用 |
-| 30003 | TOPIC_NOT_IN_TIME | 不在投票时间范围内 |
-| 30004 | ALREADY_VOTED | 地址已经投过票 |
-| 30005 | INVALID_OPTION | 无效的投票选项 |
-| 40001 | INVALID_SIGNATURE | Signature verification failed |
+### 1. Get Topics List
 
-### API 接口列表
+**Request Method:** GET
 
-#### 1. 获取投票主题列表
+**Interface Path:** `/api/topics`
 
-**请求方式：** GET
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| status | string | No | Filter by status: upcoming, active, ended |
 
-**接口地址：** `/api/topics`
+**Response Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | number | Error code, 0 means success |
+| data | array | Topics list |
+| data[].id | number | Topic ID |
+| data[].title | string | Topic title |
+| data[].start_time | datetime | Start time |
+| data[].end_time | datetime | End time |
+| data[].created_at | datetime | Creation time |
 
-**请求参数：**
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| status | string | 否 | 主题状态：upcoming(即将开始)、active(进行中)、ended(已结束) |
+**Response Type:**
+```typescript
+interface Response {
+    code: number;
+    data: Array<{
+        id: number;
+        title: string;
+        start_time: string;  // ISO datetime
+        end_time: string;    // ISO datetime
+        created_at: string;  // ISO datetime
+    }>;
+}
+```
 
-**响应参数：**
-| 参数名 | 类型 | 说明 |
-|--------|------|------|
-| id | number | 主题ID |
-| title | string | 主题标题 |
-| start_time | datetime | 开始时间 |
-| end_time | datetime | 结束时间 |
-| is_active | boolean | 是否启用 |
-| created_at | datetime | 创建时间 |
-| updated_at | datetime | 更新时间 |
+**Response Example:**
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": 1,
+            "title": "Sample Topic",
+            "start_time": "2024-01-01T00:00:00Z",
+            "end_time": "2024-01-07T00:00:00Z",
+            "created_at": "2023-12-31T00:00:00Z"
+        }
+    ]
+}
+```
 
-#### 2. 获取投票主题详情
+### 2. Get Topic Details
 
-**请求方式：** GET
+**Request Method:** GET
 
-**接口地址：** `/api/topics/:id`
+**Interface Path:** `/api/topics/:id`
 
-**路径参数：**
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| id | number | 是 | 主题ID |
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| id | number | Yes | Topic ID |
 
-**响应参数：**
-| 参数名 | 类型 | 说明 |
-|--------|------|------|
-| topic | object | 主题信息 |
-| topic.id | number | 主题ID |
-| topic.title | string | 主题标题 |
-| topic.start_time | datetime | 开始时间 |
-| topic.end_time | datetime | 结束时间 |
-| options | array | 选项列表 |
-| options[].id | number | 选项ID |
-| options[].option_text | string | 选项文本 |
-| options[].vote_count | number | 投票数量 |
+**Response Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| topic | object | Topic information |
+| topic.id | number | Topic ID |
+| topic.title | string | Topic title |
+| topic.start_time | datetime | Start time |
+| topic.end_time | datetime | End time |
+| topic.created_at | datetime | Creation time |
+| options | array | Options list |
+| options[].id | number | Option ID |
+| options[].option_text | string | Option text |
+| options[].vote_count | string | Vote count (BigInt as string) |
 
-#### 3. 提交投票
+**Response Type:**
+```typescript
+interface Response {
+    code: number;
+    data: {
+        topic: {
+            id: number;
+            title: string;
+            start_time: string;  // ISO datetime
+            end_time: string;    // ISO datetime
+            created_at: string;  // ISO datetime
+        };
+        options: Array<{
+            id: number;
+            option_text: string;
+            vote_count: string;  // BigInt as string
+        }>;
+    };
+}
+```
 
-**请求方式：** POST
+**Response Example:**
+```json
+{
+    "code": 0,
+    "data": {
+        "topic": {
+            "id": 1,
+            "title": "Sample Topic",
+            "start_time": "2024-01-01T00:00:00Z",
+            "end_time": "2024-01-07T00:00:00Z",
+            "created_at": "2023-12-31T00:00:00Z"
+        },
+        "options": [
+            {
+                "id": 1,
+                "option_text": "Option A",
+                "vote_count": "1000000000000000000"
+            }
+        ]
+    }
+}
+```
 
-**接口地址：** `/api/vote`
+**注意事项：**
+- 仅返回启用中的主题（is_active = 1）
+- 投票数量以字符串形式返回，以保留BigInt精度
+- 如果主题不存在或未启用，返回错误码TOPIC_NOT_FOUND
 
-**请求参数：**
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| topicId | number | 是 | 主题ID |
-| optionId | number | 是 | 选项ID |
-| walletAddress | string | 是 | 钱包地址 |
+### 3. Submit Vote
 
-**响应参数：**
-| 参数名 | 类型 | 说明 |
-|--------|------|------|
-| message | string | 成功提示信息 |
+**Request Method:** POST
 
-#### 4. 获取投票记录
+**Interface Path:** `/api/vote`
 
-**请求方式：** GET
+**Request Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| topicId | number | Yes | Topic ID |
+| optionId | number | Yes | Option ID |
+| walletAddress | string | Yes | Wallet address |
+| message | string | Yes | Message to sign |
+| signature | string | Yes | Base58 encoded signature |
 
-**接口地址：** `/api/topics/:id/records`
+**Response Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | number | Error code, 0 means success |
+| data.message | string | Success message |
 
-**路径参数：**
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| id | number | 是 | 主题ID |
+**Request Type:**
+```typescript
+interface Request {
+    topicId: number;
+    optionId: number;
+    walletAddress: string;
+    message: string;      // Message to sign
+    signature: string;    // Base58 encoded signature
+}
+```
 
-**查询参数：**
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| sort | string | 否 | 排序方式：amount(按票数)、time(按时间)，默认amount |
+**Response Type:**
+```typescript
+interface Response {
+    code: number;
+    data: {
+        message: string;
+    };
+}
+```
 
-**响应参数：**
-| 参数名 | 类型 | 说明 |
-|--------|------|------|
-| id | number | 记录ID |
-| topic_id | number | 主题ID |
-| option_id | number | 选项ID |
-| option_text | string | 选项文本 |
-| wallet_address | string | 钱包地址 |
-| vote_amount | number | 投票数量 |
-| created_at | datetime | 投票时间 |
+**Response Example:**
+```json
+{
+    "code": 0,
+    "data": {
+        "message": "Vote submitted successfully"
+    }
+}
+```
 
-#### 5. 获取指定地址的投票记录
+### 4. Get Topic Vote Records
 
-**请求方式：** GET
+**Request Method:** GET
 
-**接口地址：** `/api/topics/:id/wallet/:address`
+**Interface Path:** `/api/topics/:id/records`
 
-**路径参数：**
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| id | number | 是 | 主题ID |
-| address | string | 是 | 钱包地址 |
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| id | number | Yes | Topic ID |
 
-**响应参数：**
-| 参数名 | 类型 | 说明 |
-|--------|------|------|
-| id | number | 记录ID |
-| topic_id | number | 主题ID |
-| option_id | number | 选项ID |
-| option_text | string | 选项文本 |
-| wallet_address | string | 钱包地址 |
-| vote_amount | number | 投票数量 |
-| created_at | datetime | 投票时间 |
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| sort | string | No | Sort by: amount (default) or time |
 
-注：如果该地址未投票，返回null。
+**Response Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | number | Error code, 0 means success |
+| data | array | Vote records list |
+| data[].id | number | Record ID |
+| data[].topic_id | number | Topic ID |
+| data[].option_id | number | Option ID |
+| data[].wallet_address | string | Voter's wallet address |
+| data[].vote_amount | string | Vote amount (BigInt as string) |
+| data[].created_at | datetime | Vote time |
+| data[].option_text | string | Option text |
+
+**Response Type:**
+```typescript
+interface Response {
+    code: number;
+    data: Array<{
+        id: number;
+        topic_id: number;
+        option_id: number;
+        wallet_address: string;
+        vote_amount: string;     // BigInt as string
+        created_at: string;      // ISO datetime
+        option_text: string;
+    }>;
+}
+```
+
+**Response Example:**
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": 1,
+            "topic_id": 1,
+            "option_id": 1,
+            "wallet_address": "8xk3h...9j2h",
+            "vote_amount": "1000000000000000000",
+            "created_at": "2024-01-01T12:00:00Z",
+            "option_text": "Option A"
+        }
+    ]
+}
+```
+
+### 5. Get Wallet Vote Record
+
+**Request Method:** GET
+
+**Interface Path:** `/api/topics/:id/wallet/:address`
+
+**Path Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| id | number | Yes | Topic ID |
+| address | string | Yes | Wallet address |
+
+**Response Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | number | Error code, 0 means success |
+| data | object\|null | Vote record (null if not voted) |
+| data.id | number | Record ID |
+| data.topic_id | number | Topic ID |
+| data.option_id | number | Option ID |
+| data.wallet_address | string | Voter's wallet address |
+| data.vote_amount | string | Vote amount (BigInt as string) |
+| data.created_at | datetime | Vote time |
+| data.option_text | string | Option text |
+
+**Response Type:**
+```typescript
+interface Response {
+    code: number;
+    data: {
+        id: number;
+        topic_id: number;
+        option_id: number;
+        wallet_address: string;
+        vote_amount: string;     // BigInt as string
+        created_at: string;      // ISO datetime
+        option_text: string;
+    } | null;
+}
+```
+
+**Response Example:**
+```json
+{
+    "code": 0,
+    "data": {
+        "id": 1,
+        "topic_id": 1,
+        "option_id": 1,
+        "wallet_address": "8xk3h...9j2h",
+        "vote_amount": "1000000000000000000",
+        "created_at": "2024-01-01T12:00:00Z",
+        "option_text": "Option A"
+    }
+}
+```
 
 ## 注意事项
 
@@ -214,3 +375,44 @@ npm start
 ## 许可证
 
 MIT License
+
+### Error Codes
+
+All APIs may return the following error codes in the response:
+
+| Code | Message | Description |
+|------|---------|-------------|
+| 0 | Success | Operation completed successfully |
+| 1001 | Topic not found | Topic does not exist |
+| 1002 | Topic not in time | Topic is not in voting period |
+| 1003 | Already voted | Wallet has already voted for this topic |
+| 1004 | Insufficient balance | STONKS token balance is less than required (100) |
+| 1005 | Invalid option | Option ID does not exist or does not belong to the topic |
+| 1006 | System error | Internal server error |
+| 1007 | Concurrent operation | Another voting operation is in progress |
+| 1008 | Invalid signature | Signature verification failed |
+| 1009 | Database error | Database operation failed |
+
+**Error Response Example:**
+```json
+{
+    "code": 1003,
+    "message": "Already voted",
+    "data": null
+}
+```
+
+**Error Response Type:**
+```typescript
+interface ErrorResponse {
+    code: number;      // Error code, non-zero indicates error
+    message: string;   // Error message
+    data: null;        // No data for error responses
+}
+```
+
+**Notes:**
+- All error responses will have a non-zero code
+- The message field provides a human-readable description of the error
+- The data field will be null for error responses
+- Frontend should handle these error codes appropriately
