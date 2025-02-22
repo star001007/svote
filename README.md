@@ -75,29 +75,40 @@ All APIs follow this response format:
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| status | string | No | Filter by status: upcoming, active, ended |
+| status | string | No | Filter by status: upcoming, active (default), ended |
 
 **Response Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | code | number | Error code, 0 means success |
+| message | string | Response message |
 | data | array | Topics list |
 | data[].id | number | Topic ID |
 | data[].title | string | Topic title |
 | data[].start_time | datetime | Start time |
 | data[].end_time | datetime | End time |
 | data[].created_at | datetime | Creation time |
+| data[].options | array | Options list |
+| data[].options[].id | number | Option ID |
+| data[].options[].option_text | string | Option text |
+| data[].options[].vote_count | string | Vote count (BigInt as string) |
 
 **Response Type:**
 ```typescript
 interface Response {
     code: number;
+    message: string;
     data: Array<{
         id: number;
         title: string;
         start_time: string;  // ISO datetime
         end_time: string;    // ISO datetime
         created_at: string;  // ISO datetime
+        options: Array<{
+            id: number;
+            option_text: string;
+            vote_count: string;  // BigInt as string
+        }>;
     }>;
 }
 ```
@@ -106,13 +117,26 @@ interface Response {
 ```json
 {
     "code": 0,
+    "message": "Success",
     "data": [
         {
             "id": 1,
             "title": "Sample Topic",
             "start_time": "2024-01-01T00:00:00Z",
             "end_time": "2024-01-07T00:00:00Z",
-            "created_at": "2023-12-31T00:00:00Z"
+            "created_at": "2023-12-31T00:00:00Z",
+            "options": [
+                {
+                    "id": 1,
+                    "option_text": "Option A",
+                    "vote_count": "1000000000000000000"
+                },
+                {
+                    "id": 2,
+                    "option_text": "Option B",
+                    "vote_count": "500000000000000000"
+                }
+            ]
         }
     ]
 }
@@ -204,32 +228,38 @@ interface Response {
 | topicId | number | Yes | Topic ID |
 | optionId | number | Yes | Option ID |
 | walletAddress | string | Yes | Wallet address |
-| message | string | Yes | Message to sign |
 | signature | string | Yes | Base58 encoded signature |
+| message | string | Yes | Complete signature message |
+
+**Signature Message Format:**
+```
+Signature for voting:
+Topic ID: {topicId}
+Option ID: {optionId}
+Wallet: {walletAddress}
+Nonce: {Random 16-byte hex string}
+Timestamp: {ISO datetime}
+```
+
+Note:
+- Nonce is only used to ensure uniqueness of signature message
+- Timestamp format example: 2024-01-20T08:30:45.123Z
+- Line breaks use \n
 
 **Response Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | code | number | Error code, 0 means success |
-| data.message | string | Success message |
-
-**Request Type:**
-```typescript
-interface Request {
-    topicId: number;
-    optionId: number;
-    walletAddress: string;
-    message: string;      // Message to sign
-    signature: string;    // Base58 encoded signature
-}
-```
+| message | string | Response message |
+| data.voteAmount | string | Vote amount (BigInt as string) |
 
 **Response Type:**
 ```typescript
 interface Response {
     code: number;
+    message: string;
     data: {
-        message: string;
+        voteAmount: string;  // BigInt as string
     };
 }
 ```
@@ -238,11 +268,31 @@ interface Response {
 ```json
 {
     "code": 0,
+    "message": "Success",
     "data": {
-        "message": "Vote submitted successfully"
+        "voteAmount": "1"
     }
 }
 ```
+
+**Error Response Example:**
+```json
+{
+    "code": 1003,
+    "message": "Already voted",
+    "data": null
+}
+```
+
+**Error Codes:**
+| Code | Message | Description |
+|------|---------|-------------|
+| 0 | Success | Operation completed successfully |
+| 1006 | System error | Internal server error |
+| 1007 | Invalid params | Invalid parameters |
+| 1008 | Invalid signature | Signature verification failed |
+| 1009 | Invalid wallet | Invalid wallet address |
+| 1010 | Already voted | Wallet has already voted for this topic |
 
 ### 4. Get Topic Vote Records
 
@@ -323,6 +373,7 @@ interface Response {
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | code | number | Error code, 0 means success |
+| message | string | Response message |
 | data | object\|null | Vote record (null if not voted) |
 | data.id | number | Record ID |
 | data.topic_id | number | Topic ID |
@@ -336,6 +387,7 @@ interface Response {
 ```typescript
 interface Response {
     code: number;
+    message: string;
     data: {
         id: number;
         topic_id: number;
@@ -352,6 +404,7 @@ interface Response {
 ```json
 {
     "code": 0,
+    "message": "Success",
     "data": {
         "id": 1,
         "topic_id": 1,
@@ -361,6 +414,15 @@ interface Response {
         "created_at": "2024-01-01T12:00:00Z",
         "option_text": "Option A"
     }
+}
+```
+
+**Error Response Example:**
+```json
+{
+    "code": 1006,
+    "message": "System error",
+    "data": null
 }
 ```
 

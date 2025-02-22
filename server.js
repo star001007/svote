@@ -38,36 +38,77 @@ async function getSTONKSBalance(walletAddress) {
             account => account.account.data.parsed.info.mint === token.toString()
         );
         
-        return stonksAccount ? BigInt(stonksAccount.account.data.parsed.info.tokenAmount.amount) : BigInt(0);
+        // Convert balance considering decimals (e.g., 6 decimals)
+        const rawBalance = stonksAccount ? BigInt(stonksAccount.account.data.parsed.info.tokenAmount.amount) : BigInt(0);
+        return rawBalance / BigInt(10 ** 6); // Adjust based on token decimals
     } catch (error) {
         console.error('Failed to get STONKS balance:', error);
         throw ErrorCodes.WALLET_ERROR;
     }
 }
 
-// Get topic list
+// Get topic list with options
 app.get('/api/topics', async (req, res) => {
     try {
-        const { status } = req.query;
+        const { status = 'active' } = req.query;  // Default to active topics
         const now = new Date();
         
-        let whereClause = 'WHERE is_active = 1';
+        let whereClause = 'WHERE t.is_active = 1';
+        let params = [];
+        
         if (status === 'upcoming') {
-            whereClause += ' AND start_time > ?';
+            whereClause += ' AND t.start_time > ?';
+            params = [now];
         } else if (status === 'active') {
-            whereClause += ' AND start_time <= ? AND end_time >= ?';
+            whereClause += ' AND t.start_time <= ? AND t.end_time >= ?';
+            params = [now, now];
         } else if (status === 'ended') {
-            whereClause += ' AND end_time < ?';
+            whereClause += ' AND t.end_time < ?';
+            params = [now];
         }
         
+        // First get topics
         const [topics] = await pool.execute(
-            `SELECT id, title, description, start_time, end_time, created_at 
-             FROM vote_topics ${whereClause} 
-             ORDER BY created_at DESC LIMIT 100`,
-            status ? [now, now] : []
+            `SELECT t.id, t.title, t.start_time, t.end_time, t.created_at 
+             FROM vote_topics t 
+             ${whereClause} 
+             ORDER BY t.created_at DESC LIMIT 100`,
+            params
         );
-        
-        res.json(Response.success(topics));
+
+        // Then get options for all topics
+        if (topics.length > 0) {
+            const topicIds = topics.map(topic => topic.id);
+            const [options] = await pool.execute(
+                `SELECT id, topic_id, option_text, vote_count 
+                 FROM vote_options 
+                 WHERE topic_id IN (${topicIds.map(() => '?').join(',')})`,
+                topicIds
+            );
+
+            // Convert vote_count to string and group options by topic
+            const optionsByTopic = options.reduce((acc, option) => {
+                if (!acc[option.topic_id]) {
+                    acc[option.topic_id] = [];
+                }
+                acc[option.topic_id].push({
+                    id: option.id,
+                    option_text: option.option_text,
+                    vote_count: option.vote_count.toString()
+                });
+                return acc;
+            }, {});
+
+            // Combine topics with their options
+            const topicsWithOptions = topics.map(topic => ({
+                ...topic,
+                options: optionsByTopic[topic.id] || []
+            }));
+
+            res.json(Response.success(topicsWithOptions));
+        } else {
+            res.json(Response.success([]));
+        }
     } catch (error) {
         console.error('Failed to get topics:', error);
         res.status(500).json(Response.error(ErrorCodes.DB_ERROR));
@@ -77,7 +118,6 @@ app.get('/api/topics', async (req, res) => {
 // Get topic details
 app.get('/api/topics/:id', async (req, res) => {
     try {
-        // Query topic basic information
         const [[topic]] = await pool.execute(
             'SELECT id, title, start_time, end_time, created_at FROM vote_topics WHERE id = ? AND is_active = 1',
             [req.params.id]
@@ -93,7 +133,7 @@ app.get('/api/topics/:id', async (req, res) => {
             [req.params.id]
         );
 
-        // Convert BigInt to string for vote_count
+        // Convert all BigInt values to strings
         const formattedOptions = options.map(option => ({
             ...option,
             vote_count: option.vote_count.toString()
@@ -200,7 +240,11 @@ app.post('/api/vote', async (req, res) => {
             throw ErrorCodes.SYSTEM_ERROR;
         }
         conn.release();
-        res.json(Response.success({ message: 'Vote submitted successfully' }));
+        
+        // Return vote amount in response
+        res.json(Response.success({ 
+            vote_amount: balance.toString()
+        }));
     } catch (error) {
         console.error('Failed to submit vote:', error);
         res.status(400).json(Response.error(error.code ? error : ErrorCodes.SYSTEM_ERROR));
@@ -215,17 +259,22 @@ app.get('/api/topics/:id/records', async (req, res) => {
         const sort = req.query.sort || 'amount';
         const orderBy = sort === 'time' ? 'created_at' : 'vote_amount';
 
-        // Get voting records
         const [records] = await pool.execute(
             `SELECT * FROM vote_records WHERE topic_id = ? ORDER BY ${orderBy} DESC`,
             [req.params.id]
         );
 
-        if (records.length === 0) {
+        // Convert vote_amount to string in records
+        const formattedRecords = records.map(record => ({
+            ...record,
+            vote_amount: record.vote_amount.toString()
+        }));
+
+        if (formattedRecords.length === 0) {
             return res.json(Response.success([]));
         }
 
-        // Query all options information
+        // Query options information
         const [options] = await pool.execute(
             'SELECT id, option_text FROM vote_options WHERE topic_id = ?',
             [req.params.id]
@@ -238,7 +287,7 @@ app.get('/api/topics/:id/records', async (req, res) => {
         }, {});
 
         // Combine data
-        const enrichedRecords = records.map(record => ({
+        const enrichedRecords = formattedRecords.map(record => ({
             ...record,
             option_text: optionMap[record.option_id]
         }));
@@ -269,8 +318,10 @@ app.get('/api/topics/:id/wallet/:address', async (req, res) => {
             [record.option_id]
         );
 
+        // Convert vote_amount to string
         res.json(Response.success({
             ...record,
+            vote_amount: record.vote_amount.toString(),
             option_text: option.option_text
         }));
     } catch (error) {

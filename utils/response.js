@@ -1,16 +1,16 @@
 class Response {
     static success(data = null) {
         return {
-            errno: 0,
-            errmsg: 'Success',
+            code: 0,
+            message: 'Success',
             data
         };
     }
 
     static error(error) {
         return {
-            errno: error.code || 10001,
-            errmsg: error.message || 'System error',
+            code: error.code || 1006,  // Default to SYSTEM_ERROR
+            message: error.message || 'System error',
             data: null
         };
     }

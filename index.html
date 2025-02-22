@@ -6,8 +6,10 @@
     <title>社区投票系统</title>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.31.0/lib/index.iife.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://bundle.run/bs58@5.0.0"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bs58@5.0.0/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/client@1.7.8/dist/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/qrcode-modal@1.7.8/dist/umd/index.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -81,6 +83,104 @@
             color: red;
             margin-top: 10px;
         }
+        
+        .wallet-selection {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        
+        .wallet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+        }
+        
+        .wallet-option {
+            padding: 15px;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .wallet-option:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .wallet-option img {
+            width: 32px;
+            height: 32px;
+            margin-right: 12px;
+            border-radius: 8px;
+        }
+        
+        @media (min-width: 768px) {
+            .wallet-selection {
+                width: 400px;
+                left: 50%;
+                transform: translateX(-50%);
+                bottom: 50%;
+                transform: translate(-50%, 50%);
+                border-radius: 12px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .topic-card {
+                margin: 10px 0;
+            }
+            
+            .wallet-selection {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: white;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
+                padding: 20px;
+                box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            }
+            
+            .wallet-option {
+                padding: 15px;
+                margin: 10px 0;
+                display: flex;
+                align-items: center;
+                border: 1px solid #eee;
+                border-radius: 8px;
+            }
+            
+            .wallet-option img {
+                width: 32px;
+                height: 32px;
+                margin-right: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -100,52 +200,317 @@
         
         <div id="topicList" class="topic-list"></div>
     </div>
-    
+
     <script>
         let walletAddress = null;
         const API_BASE_URL = 'http://localhost:3000/api';
         
-        async function connectWallet() {
-            try {
-                if (!window.solana || !window.solana.isPhantom) {
-                    alert('请安装 Phantom 钱包!');
-                    return;
+        // Wallet connection utilities
+        const walletUtils = {
+            // Check wallet availability
+            checkWalletProviders() {
+                const providers = {
+                    phantom: window.solana?.isPhantom,
+                    okx: window.okxwallet?.isOKExWallet,
+                    metamask: window.ethereum?.isMetaMask,
+                    trustwallet: window.trustwallet?.isTrust,
+                    walletconnect: true // WalletConnect 总是可用
+                };
+                
+                // 检查每个钱包的可用性
+                const availableWallets = {};
+                for (const [key, isAvailable] of Object.entries(providers)) {
+                    if (isAvailable) {
+                        availableWallets[key] = true;
+                        console.log(`Found wallet: ${key}`);
+                    }
                 }
                 
-                const resp = await window.solana.connect();
-                walletAddress = resp.publicKey.toString();
-                $('#walletAddress').text('钱包地址: ' + walletAddress);
-                $('#connectWallet').prop('disabled', true);
-                
-                loadTopics('active');
-            } catch (err) {
-                console.error('连接钱包失败:', err);
-                alert('连接钱包失败');
+                return availableWallets;
+            },
+
+            // Connect to wallet
+            async connectWallet(type) {
+                try {
+                    let walletAddress;
+                    
+                    switch(type) {
+                        case 'phantom':
+                            if (!window.solana?.isPhantom) {
+                                window.open('https://phantom.app/', '_blank');
+                                throw new Error('请安装 Phantom 钱包');
+                            }
+                            const phantomResp = await window.solana.connect();
+                            walletAddress = phantomResp.publicKey.toString();
+                            break;
+
+                        case 'okx':
+                            if (!window.okxwallet?.isOKExWallet) {
+                                window.open('https://www.okx.com/web3', '_blank');
+                                throw new Error('请安装 OKX 钱包');
+                            }
+                            try {
+                                await window.okxwallet.connect();
+                                walletAddress = await window.okxwallet.getAccount();
+                            } catch (err) {
+                                console.error('OKX wallet connect error:', err);
+                                throw new Error('OKX 钱包连接失败');
+                            }
+                            break;
+
+                        case 'metamask':
+                            if (!window.ethereum?.isMetaMask) {
+                                window.open('https://metamask.io/', '_blank');
+                                throw new Error('请安装 MetaMask 钱包');
+                            }
+                            const accounts = await window.ethereum.request({ 
+                                method: 'eth_requestAccounts' 
+                            });
+                            walletAddress = accounts[0];
+                            break;
+
+                        case 'trustwallet':
+                            if (!window.trustwallet?.isTrust) {
+                                window.open('https://trustwallet.com/', '_blank');
+                                throw new Error('请安装 Trust Wallet');
+                            }
+                            const trustResp = await window.trustwallet.solana.connect();
+                            walletAddress = trustResp.publicKey.toString();
+                            break;
+
+                        case 'walletconnect':
+                            const connector = new WalletConnectClient({
+                                bridge: "https://bridge.walletconnect.org",
+                                qrcodeModal: QRCodeModal
+                            });
+                            
+                            if (!connector.connected) {
+                                await connector.connect();
+                            }
+                            walletAddress = connector.accounts[0];
+                            break;
+
+                        default:
+                            throw new Error('不支持的钱包类型');
+                    }
+
+                    console.log('Connected wallet address:', walletAddress);
+                    return {
+                        address: walletAddress,
+                        type: type
+                    };
+                } catch (err) {
+                    console.error('Wallet connection error:', err);
+                    throw err;
+                }
             }
-        }
+        };
+        
+        $(document).ready(() => {
+            // 插入钱包选择 HTML
+            $('body').append(generateWalletSelectionHtml());
+            
+            // 绑定连接钱包按钮点击事件
+            $('#connectWallet').on('click', function() {
+                console.log('Connect wallet button clicked');
+                $('.wallet-selection').show();
+            });
+            
+            // 绑定钱包选项点击事件
+            $(document).on('click', '.wallet-option', async function() {
+                console.log('Wallet option clicked:', $(this).data('wallet'));
+                const walletType = $(this).data('wallet');
+                try {
+                    const wallet = await walletUtils.connectWallet(walletType);
+                    walletAddress = wallet.address;
+                    $('#walletAddress').text('钱包地址: ' + walletAddress);
+                    $('#connectWallet').prop('disabled', true);
+                    $('.wallet-selection').hide();
+                    
+                    loadTopics('active');
+                } catch (err) {
+                    if (err.code === 4001) {
+                        alert('用户拒绝了连接请求');
+                    } else {
+                        alert(err.message || '连接钱包失败');
+                    }
+                }
+            });
+
+            // 绑定关闭按钮点击事件
+            $(document).on('click', '.close-btn', function() {
+                console.log('Close button clicked');
+                $('.wallet-selection').hide();
+            });
+
+            // 加载主题列表
+            console.log('Document ready, loading topics...');
+            loadTopics('active');
+            
+            // 绑定状态过滤按钮点击事件
+            $('.status-filter button').click(function() {
+                const status = $(this).data('status');
+                console.log('Switching to status:', status);
+                loadTopics(status);
+            });
+            
+            // 绑定投票按钮点击事件
+            $(document).on('click', '.vote-btn', function() {
+                const topicId = $(this).data('topic-id');
+                debug.log('App', 'Vote button clicked', { topicId });
+                submitVote(topicId);
+            });
+
+            // 在页面加载时检查可用的钱包
+            const availableWallets = walletUtils.checkWalletProviders();
+            console.log('Available wallets on load:', availableWallets);
+            
+            // 只显示可用的钱包选项
+            $('.wallet-option').each(function() {
+                const walletType = $(this).data('wallet');
+                if (!availableWallets[walletType]) {
+                    $(this).addClass('unavailable');
+                }
+            });
+        });
         
         async function loadTopics(status) {
             try {
+                console.log('Loading topics for status:', status);
                 const response = await $.get(`${API_BASE_URL}/topics?status=${status}`);
+                console.log('API response:', response);
+                
                 const topicList = $('#topicList');
                 topicList.empty();
                 
-                response.forEach(topic => {
+                if (!response.data || response.data.length === 0) {
+                    topicList.append('<div class="topic-card">No topics available</div>');
+                    return;
+                }
+                
+                response.data.forEach(topic => {
+                    const options = topic.options.map(option => `
+                        <div class="option-item">
+                            <input type="radio" name="topic-${topic.id}" value="${option.id}">
+                            <label>${option.option_text}</label>
+                            <span>(${option.vote_count} 票)</span>
+                        </div>
+                    `).join('');
+
                     const topicElement = $(`
                         <div class="topic-card">
                             <h3>${topic.title}</h3>
                             <p>开始时间: ${new Date(topic.start_time).toLocaleString()}</p>
                             <p>结束时间: ${new Date(topic.end_time).toLocaleString()}</p>
-                            <div class="option-list" id="options-${topic.id}"></div>
+                            <div class="option-list">
+                                ${options}
+                                <button class="btn vote-btn" data-topic-id="${topic.id}">投票</button>
+                            </div>
                             <div class="records" id="records-${topic.id}"></div>
                         </div>
                     `);
                     
                     topicList.append(topicElement);
-                    loadTopicDetails(topic.id);
                 });
             } catch (err) {
                 console.error('加载主题失败:', err);
+                $('#topicList').html('<div class="error">加载主题失败</div>');
+            }
+        }
+        
+        async function submitVote(topicId) {
+            try {
+                debug.log('Vote', 'Submitting vote', { topicId });
+                
+                if (!walletAddress) {
+                    alert('请先连接钱包');
+                    return;
+                }
+                
+                const selectedOption = $(`input[name="topic-${topicId}"]:checked`).val();
+                if (!selectedOption) {
+                    alert('请选择一个选项');
+                    return;
+                }
+
+                // 生成随机串，仅用于签名消息
+                const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+
+                // 构造签名消息
+                const messageContent = `Signature for voting:\n` +
+                    `Topic ID: ${topicId}\n` +
+                    `Option ID: ${selectedOption}\n` +
+                    `Wallet: ${walletAddress}\n` +
+                    `Nonce: ${nonce}\n` +  // 包含随机串但不发送给后端
+                    `Timestamp: ${new Date().toISOString()}`;
+
+                debug.log('Vote', 'Message to sign', messageContent);
+
+                // 根据不同钱包类型处理签名
+                const messageBytes = new TextEncoder().encode(messageContent);
+                let signature;
+                
+                try {
+                    debug.log('Vote', 'Requesting signature', { messageBytes });
+                    
+                    if (window.solana?.isPhantom) {
+                        const signedMessage = await window.solana.signMessage(messageBytes, 'utf8');
+                        signature = Base58.encode(signedMessage.signature);
+                    } else if (window.okxwallet?.isOKExWallet) {
+                        const signedMessage = await window.okxwallet.signMessage(messageBytes);
+                        signature = Base58.encode(signedMessage);
+                    } else if (window.ethereum?.isMetaMask) {
+                        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                        signature = await window.ethereum.request({
+                            method: 'personal_sign',
+                            params: [messageContent, accounts[0]]
+                        });
+                    } else {
+                        throw new Error('未找到支持的钱包');
+                    }
+                    
+                    debug.log('Vote', 'Got signature', { signature });
+
+                    // 提交投票，不包含 nonce 参数
+                    const response = await $.ajax({
+                        url: `${API_BASE_URL}/vote`,
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            topicId,
+                            optionId: selectedOption,
+                            walletAddress,
+                            signature,
+                            message: messageContent  // 包含完整的签名消息供后端验证
+                        })
+                    });
+
+                    debug.log('Vote', 'Submit response', response);
+
+                    if (response.code === 0) {
+                        // 更新显示的投票数
+                        const voteData = response.data;
+                        $(`#option-${voteData.optionId}-votes`).text(voteData.totalVotes);
+                        
+                        alert('投票成功！');
+                        // 刷新投票数据
+                        loadTopics('active');
+                    } else {
+                        throw new Error(response.message || '投票失败');
+                    }
+                } catch (err) {
+                    debug.error('Vote', 'Signature error', err);
+                    if (err.code === 4001) {
+                        alert('用户拒绝了签名请求');
+                    } else {
+                        throw err;
+                    }
+                }
+            } catch (err) {
+                debug.error('Vote', 'Submit error', err);
+                alert(err.message || '提交投票失败');
             }
         }
         
@@ -176,58 +541,6 @@
                 loadTopicRecords(topicId);
             } catch (err) {
                 console.error('加载主题详情失败:', err);
-            }
-        }
-        
-        async function submitVote(topicId) {
-            try {
-                if (!walletAddress) {
-                    alert('Please connect wallet first');
-                    return;
-                }
-                
-                const selectedOption = $(`input[name="topic-${topicId}"]:checked`).val();
-                if (!selectedOption) {
-                    alert('Please select an option');
-                    return;
-                }
-
-                // Generate random message for signing
-                const randomString = Array.from(crypto.getRandomValues(new Uint8Array(8)))
-                    .map(b => b.toString(16).padStart(2, '0'))
-                    .join('');
-                const message = `Vote for topic ${topicId} with random string ${randomString}`;
-                
-                // Request signature from wallet
-                try {
-                    const messageBytes = new TextEncoder().encode(message);
-                    const signature = await window.solana.signMessage(messageBytes, 'utf8');
-                    
-                    // Submit vote with signature
-                    await $.ajax({
-                        url: `${API_BASE_URL}/vote`,
-                        method: 'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify({
-                            topicId,
-                            optionId: selectedOption,
-                            walletAddress,
-                            message,
-                            signature: bs58.encode(signature)
-                        })
-                    });
-                    
-                    alert('Vote submitted successfully!');
-                    loadTopicDetails(topicId);
-                } catch (err) {
-                    if (err.code === 4001) {
-                        alert('Signature request rejected');
-                    } else {
-                        throw err;
-                    }
-                }
-            } catch (err) {
-                alert(err.responseJSON?.error || 'Failed to submit vote');
             }
         }
         
@@ -268,23 +581,96 @@
                 console.error('加载投票记录失败:', err);
             }
         }
-        
-        $(document).ready(() => {
-            $('#connectWallet').click(connectWallet);
-            
-            $('.status-filter button').click(function() {
-                const status = $(this).data('status');
-                loadTopics(status);
-            });
-            
-            $(document).on('click', '.vote-btn', function() {
-                const topicId = $(this).data('topic-id');
-                submitVote(topicId);
-            });
-            
-            // 默认加载进行中的投票
-            loadTopics('active');
-        });
+
+        // Wallet icons and metadata
+        const WALLET_INFO = {
+            phantom: {
+                name: 'Phantom',
+                icon: 'https://raw.githubusercontent.com/phantom-labs/phantom-logo/master/phantom-icon-purple.png',
+                downloadUrl: 'https://phantom.app/'
+            },
+            okx: {
+                name: 'OKX Wallet',
+                icon: 'https://static.okx.com/cdn/assets/imgs/241/C6DCCB610E5B9F71.png',
+                downloadUrl: 'https://www.okx.com/web3'
+            },
+            metamask: {
+                name: 'MetaMask',
+                icon: 'https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg',
+                downloadUrl: 'https://metamask.io/'
+            },
+            trustwallet: {
+                name: 'Trust Wallet',
+                icon: 'https://trustwallet.com/assets/images/media/assets/trust_platform.svg',
+                downloadUrl: 'https://trustwallet.com/'
+            },
+            walletconnect: {
+                name: 'WalletConnect',
+                icon: 'https://raw.githubusercontent.com/WalletConnect/walletconnect-assets/master/Icon/Blue%20(Default)/Icon.svg',
+                downloadUrl: 'https://walletconnect.com/'
+            }
+        };
+
+        // Generate wallet selection HTML
+        function generateWalletSelectionHtml() {
+            const walletOptions = Object.entries(WALLET_INFO).map(([key, info]) => `
+                <div class="wallet-option" data-wallet="${key}">
+                    <img src="${info.icon}" alt="${info.name}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22><rect width=%2232%22 height=%2232%22 fill=%22%23eee%22/></svg>'">
+                    <span>${info.name}</span>
+                </div>
+            `).join('');
+
+            return `
+                <div class="wallet-selection" style="display: none;">
+                    <div class="wallet-header">
+                        <h3>选择钱包</h3>
+                        <button class="close-btn">&times;</button>
+                    </div>
+                    ${walletOptions}
+                </div>
+            `;
+        }
+
+        // 添加调试工具
+        const debug = {
+            log: function(component, action, data) {
+                console.log(`[${component}] ${action}:`, data);
+            },
+            error: function(component, action, error) {
+                console.error(`[${component}] ${action} failed:`, error);
+            }
+        };
+
+        // Base58 编码实现
+        const Base58 = {
+            ALPHABET: '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz',
+            encode: function(buffer) {
+                if (buffer.length === 0) return '';
+                
+                const digits = [0];
+                for (let i = 0; i < buffer.length; i++) {
+                    let carry = buffer[i];
+                    for (let j = 0; j < digits.length; j++) {
+                        carry += digits[j] << 8;
+                        digits[j] = carry % 58;
+                        carry = (carry / 58) | 0;
+                    }
+                    while (carry > 0) {
+                        digits.push(carry % 58);
+                        carry = (carry / 58) | 0;
+                    }
+                }
+
+                let string = '';
+                for (let i = 0; i < buffer.length && buffer[i] === 0; i++) {
+                    string += '1';
+                }
+                for (let i = digits.length - 1; i >= 0; i--) {
+                    string += this.ALPHABET[digits[i]];
+                }
+                return string;
+            }
+        };
     </script>
 </body>
 </html> 
