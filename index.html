@@ -181,6 +181,75 @@
                 margin-right: 12px;
             }
         }
+        
+        .vote-option {
+            margin-bottom: 10px;
+        }
+        
+        .option-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.3s ease;
+            position: relative;
+            min-width: 30px;
+        }
+        
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-weight: bold;
+        }
+        
+        .vote-count {
+            margin-left: 10px;
+        }
+        
+        /* 进度条颜色变量 */
+        :root {
+            --color-1: linear-gradient(90deg, #FF6B6B, #FF8E8E);
+            --color-2: linear-gradient(90deg, #4ECDC4, #45B7AF);
+            --color-3: linear-gradient(90deg, #96C93D, #7BA32E);
+            --color-4: linear-gradient(90deg, #A18CD1, #8675A9);
+            --color-5: linear-gradient(90deg, #FFA62E, #EA9420);
+        }
+
+        /* 为不同选项设置不同颜色 */
+        .vote-option:nth-child(5n+1) .progress-bar {
+            background: var(--color-1);
+        }
+        
+        .vote-option:nth-child(5n+2) .progress-bar {
+            background: var(--color-2);
+        }
+        
+        .vote-option:nth-child(5n+3) .progress-bar {
+            background: var(--color-3);
+        }
+        
+        .vote-option:nth-child(5n+4) .progress-bar {
+            background: var(--color-4);
+        }
+        
+        .vote-option:nth-child(5n+5) .progress-bar {
+            background: var(--color-5);
+        }
     </style>
 </head>
 <body>
@@ -389,33 +458,64 @@
                 }
                 
                 response.data.forEach(topic => {
-                    const options = topic.options.map(option => `
-                        <div class="option-item">
-                            <input type="radio" name="topic-${topic.id}" value="${option.id}">
-                            <label>${option.option_text}</label>
-                            <span>(${option.vote_count} 票)</span>
-                        </div>
-                    `).join('');
-
-                    const topicElement = $(`
-                        <div class="topic-card">
-                            <h3>${topic.title}</h3>
-                            <p>开始时间: ${new Date(topic.start_time).toLocaleString()}</p>
-                            <p>结束时间: ${new Date(topic.end_time).toLocaleString()}</p>
-                            <div class="option-list">
-                                ${options}
-                                <button class="btn vote-btn" data-topic-id="${topic.id}">投票</button>
-                            </div>
-                            <div class="records" id="records-${topic.id}"></div>
-                        </div>
-                    `);
-                    
+                    const topicElement = $(renderTopic(topic));
                     topicList.append(topicElement);
                 });
             } catch (err) {
                 console.error('加载主题失败:', err);
                 $('#topicList').html('<div class="error">加载主题失败</div>');
             }
+        }
+        
+        function renderTopic(topic) {
+            // 计算总票数
+            const totalVotes = topic.options.reduce((sum, opt) => sum + BigInt(opt.vote_count), BigInt(0));
+            
+            // 计算每个选项的百分比，最后一个选项特殊处理
+            let totalPercentage = 0;
+            
+            const options = topic.options.map((option, index, array) => {
+                let percentage;
+                if (index === array.length - 1) {
+                    // 最后一个选项：用100减去前面所有选项的百分比和
+                    percentage = (100 - totalPercentage).toFixed(2);
+                } else {
+                    // 其他选项：正常计算，保留两位小数
+                    percentage = totalVotes === BigInt(0) ? 0 : 
+                        Number((BigInt(option.vote_count) * BigInt(10000)) / totalVotes) / 100;
+                    totalPercentage += percentage;
+                    percentage = percentage.toFixed(2);
+                }
+                
+                return `
+                    <div class="vote-option">
+                        <div class="option-header">
+                            <input type="radio" name="topic-${topic.id}" value="${option.id}" id="option-${option.id}">
+                            <label for="option-${option.id}">${option.option_text}</label>
+                            <span class="vote-count" id="option-${option.id}-votes">${option.vote_count}</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${percentage}%">
+                                <span class="progress-text">${percentage}%</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="topic-card">
+                    <h3>${topic.title}</h3>
+                    <div class="topic-time">
+                        <span>开始：${new Date(topic.start_time).toLocaleString()}</span>
+                        <span>结束：${new Date(topic.end_time).toLocaleString()}</span>
+                    </div>
+                    <div class="options-container">
+                        ${options}
+                    </div>
+                    <button class="vote-btn" data-topic-id="${topic.id}">投票</button>
+                </div>
+            `;
         }
         
         async function submitVote(topicId) {
