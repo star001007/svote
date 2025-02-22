@@ -7,6 +7,7 @@
     <script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.31.0/lib/index.iife.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://bundle.run/bs58@5.0.0"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -181,31 +182,52 @@
         async function submitVote(topicId) {
             try {
                 if (!walletAddress) {
-                    alert('请先连接钱包');
+                    alert('Please connect wallet first');
                     return;
                 }
                 
                 const selectedOption = $(`input[name="topic-${topicId}"]:checked`).val();
                 if (!selectedOption) {
-                    alert('请选择一个选项');
+                    alert('Please select an option');
                     return;
                 }
+
+                // Generate random message for signing
+                const randomString = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+                const message = `Vote for topic ${topicId} with random string ${randomString}`;
                 
-                await $.ajax({
-                    url: `${API_BASE_URL}/vote`,
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({
-                        topicId,
-                        optionId: selectedOption,
-                        walletAddress
-                    })
-                });
-                
-                alert('投票成功！');
-                loadTopicDetails(topicId);
+                // Request signature from wallet
+                try {
+                    const messageBytes = new TextEncoder().encode(message);
+                    const signature = await window.solana.signMessage(messageBytes, 'utf8');
+                    
+                    // Submit vote with signature
+                    await $.ajax({
+                        url: `${API_BASE_URL}/vote`,
+                        method: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            topicId,
+                            optionId: selectedOption,
+                            walletAddress,
+                            message,
+                            signature: bs58.encode(signature)
+                        })
+                    });
+                    
+                    alert('Vote submitted successfully!');
+                    loadTopicDetails(topicId);
+                } catch (err) {
+                    if (err.code === 4001) {
+                        alert('Signature request rejected');
+                    } else {
+                        throw err;
+                    }
+                }
             } catch (err) {
-                alert(err.responseJSON?.error || '投票失败');
+                alert(err.responseJSON?.error || 'Failed to submit vote');
             }
         }
         

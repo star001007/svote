@@ -83,6 +83,7 @@ npm start
 | 30003 | TOPIC_NOT_IN_TIME | 不在投票时间范围内 |
 | 30004 | ALREADY_VOTED | 地址已经投过票 |
 | 30005 | INVALID_OPTION | 无效的投票选项 |
+| 40001 | INVALID_SIGNATURE | Signature verification failed |
 
 ### API 接口列表
 
@@ -127,10 +128,8 @@ npm start
 | topic.title | string | 主题标题 |
 | topic.start_time | datetime | 开始时间 |
 | topic.end_time | datetime | 结束时间 |
-| topic.is_active | boolean | 是否启用 |
 | options | array | 选项列表 |
 | options[].id | number | 选项ID |
-| options[].topic_id | number | 主题ID |
 | options[].option_text | string | 选项文本 |
 | options[].vote_count | number | 投票数量 |
 

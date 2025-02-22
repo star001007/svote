@@ -7,6 +7,8 @@ const config = require('./config.json');
 const ErrorCodes = require('./constants/errorCodes');
 const Response = require('./utils/response');
 const Lock = require('./utils/lock');
+const bs58 = require('bs58');
+const nacl = require('tweetnacl');
 
 const app = express();
 app.use(cors());
@@ -59,7 +61,9 @@ app.get('/api/topics', async (req, res) => {
         }
         
         const [topics] = await pool.execute(
-            `SELECT * FROM vote_topics ${whereClause} ORDER BY created_at DESC LIMIT 100`,
+            `SELECT id, title, description, start_time, end_time, created_at 
+             FROM vote_topics ${whereClause} 
+             ORDER BY created_at DESC LIMIT 100`,
             status ? [now, now] : []
         );
         
@@ -75,7 +79,7 @@ app.get('/api/topics/:id', async (req, res) => {
     try {
         // Query topic basic information
         const [[topic]] = await pool.execute(
-            'SELECT * FROM vote_topics WHERE id = ?',
+            'SELECT id, title, start_time, end_time, created_at FROM vote_topics WHERE id = ? AND is_active = 1',
             [req.params.id]
         );
 
@@ -85,7 +89,7 @@ app.get('/api/topics/:id', async (req, res) => {
 
         // Query options information
         const [options] = await pool.execute(
-            'SELECT id, topic_id, option_text, vote_count FROM vote_options WHERE topic_id = ?',
+            'SELECT id, option_text, vote_count FROM vote_options WHERE topic_id = ?',
             [req.params.id]
         );
 
@@ -102,7 +106,7 @@ app.post('/api/vote', async (req, res) => {
     const lockKey = `vote:${req.body.topicId}:${req.body.walletAddress}`;
     
     try {
-        // Try to acquire lock
+        // Original voting logic
         if (Lock.isLocked(lockKey)) {
             throw ErrorCodes.CONCURRENT_OPERATION;
         }
@@ -112,8 +116,28 @@ app.post('/api/vote', async (req, res) => {
         } catch (error) {
             throw ErrorCodes.CONCURRENT_OPERATION;
         }
-                
-        const { topicId, optionId, walletAddress } = req.body;
+
+        // Verify wallet ownership
+        const { topicId, optionId, walletAddress, message, signature } = req.body;
+        
+        try {
+            const publicKey = new PublicKey(walletAddress);
+            const signatureUint8 = bs58.decode(signature);
+            const messageUint8 = new TextEncoder().encode(message);
+            
+            const isValid = nacl.sign.detached.verify(
+                messageUint8,
+                signatureUint8,
+                publicKey.toBytes()
+            );
+            
+            if (!isValid) {
+                throw ErrorCodes.INVALID_SIGNATURE;
+            }
+        } catch (error) {
+            console.error('Signature verification failed:', error);
+            throw ErrorCodes.INVALID_SIGNATURE;
+        }
         
         // Check topic status
         const [[topic]] = await conn.execute(
@@ -148,28 +172,31 @@ app.post('/api/vote', async (req, res) => {
 
         // Start transaction
         await conn.beginTransaction();
-        
-        // Record vote
-        await conn.execute(
-            'INSERT INTO vote_records (topic_id, option_id, wallet_address, vote_amount) VALUES (?, ?, ?, ?)',
-            [topicId, optionId, walletAddress, balance.toString()]
-        );
-        
-        // Update option vote count
-        await conn.execute(
-            'UPDATE vote_options SET vote_count = vote_count + ? WHERE id = ?',
-            [balance.toString(), optionId]
-        );
-        
-        await conn.commit();
+        try {
+            // Record vote
+            await conn.execute(
+                'INSERT INTO vote_records (topic_id, option_id, wallet_address, vote_amount) VALUES (?, ?, ?, ?)',
+                [topicId, optionId, walletAddress, balance.toString()]
+            );
+
+            // Update option vote count
+            await conn.execute(
+                'UPDATE vote_options SET vote_count = vote_count + ? WHERE id = ?',
+                [balance.toString(), optionId]
+            );
+            await conn.commit();
+        } catch (error) {
+            await conn.rollback();
+            console.error('DB exec error:', error);
+            throw ErrorCodes.SYSTEM_ERROR;
+        }
+        conn.release();
         res.json(Response.success({ message: 'Vote submitted successfully' }));
     } catch (error) {
-        await conn.rollback();
         console.error('Failed to submit vote:', error);
         res.status(400).json(Response.error(error.code ? error : ErrorCodes.SYSTEM_ERROR));
     } finally {
         Lock.release(lockKey);
-        conn.release();
     }
 });
 
