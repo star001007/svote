@@ -239,7 +239,6 @@ app.post('/api/vote', async (req, res) => {
             console.error('DB exec error:', error);
             throw ErrorCodes.SYSTEM_ERROR;
         }
-        conn.release();
         
         // Return vote amount in response
         res.json(Response.success({ 
@@ -249,6 +248,7 @@ app.post('/api/vote', async (req, res) => {
         console.error('Failed to submit vote:', error);
         res.status(400).json(Response.error(error.code ? error : ErrorCodes.SYSTEM_ERROR));
     } finally {
+        conn.release();
         Lock.release(lockKey);
     }
 });
