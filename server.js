@@ -9,6 +9,7 @@ const Response = require('./utils/response');
 const Lock = require('./utils/lock');
 const Base58 = require('bs58');
 const nacl = require('tweetnacl');
+const Scheduler = require('./utils/scheduler.js');
 
 const app = express();
 app.use(cors());
@@ -213,12 +214,26 @@ app.post('/api/vote', async (req, res) => {
             throw ErrorCodes.ALREADY_VOTED;
         }
         
-        // Get STONKS balance
-        const balance = await getSTONKSBalance(walletAddress);
+        // 先检查是否有快照余额
+        const [[snapshot]] = await conn.execute(
+            'SELECT balance FROM balance_snapshots WHERE topic_id = ? AND wallet_address = ?',
+            [topicId, walletAddress]
+        );
+        
+        let balance;
+        
+        if (snapshot) {
+            // 使用快照余额
+            balance = BigInt(snapshot.balance);
+        } else {
+            // 如果没有快照，获取当前余额
+            balance = await getSTONKSBalance(walletAddress);
+        }
+        
         if (balance < BigInt(100)) {
             throw ErrorCodes.INSUFFICIENT_BALANCE;
         }
-
+        
         // Start transaction
         await conn.beginTransaction();
         try {
@@ -242,6 +257,7 @@ app.post('/api/vote', async (req, res) => {
         
         // Return vote amount in response
         res.json(Response.success({ 
+            message: 'Vote submitted successfully',
             vote_amount: balance.toString()
         }));
     } catch (error) {
@@ -299,38 +315,87 @@ app.get('/api/topics/:id/records', async (req, res) => {
     }
 });
 
-// Get wallet voting record
-app.get('/api/topics/:id/wallet/:address', async (req, res) => {
+// Get topic's balance snapshots
+app.get('/api/topics/:id/snapshots', async (req, res) => {
     try {
-        // Query voting record
-        const [[record]] = await pool.execute(
-            'SELECT * FROM vote_records WHERE topic_id = ? AND wallet_address = ?',
+        // Check if topic exists
+        const [[topic]] = await pool.execute(
+            'SELECT id FROM vote_topics WHERE id = ?',
+            [req.params.id]
+        );
+        
+        if (!topic) {
+            throw ErrorCodes.TOPIC_NOT_FOUND;
+        }
+        
+        // Get snapshots
+        const [snapshots] = await pool.execute(
+            'SELECT wallet_address, balance, created_at FROM balance_snapshots WHERE topic_id = ? ORDER BY balance DESC',
+            [req.params.id]
+        );
+        
+        res.json(Response.success(snapshots));
+    } catch (error) {
+        console.error('Failed to get balance snapshots:', error);
+        res.status(500).json(Response.error(error.code ? error : ErrorCodes.DB_ERROR));
+    }
+});
+
+// Get topic's eligible votes
+app.get('/api/topics/:id/eligible-votes/:address', async (req, res) => {
+    try {
+        // 先检查主题是否存在
+        const [[topic]] = await pool.execute(
+            'SELECT id FROM vote_topics WHERE id = ?',
+            [req.params.id]
+        );
+        
+        if (!topic) {
+            throw ErrorCodes.TOPIC_NOT_FOUND;
+        }
+        
+        // 先检查是否已投票
+        const [[voteRecord]] = await pool.execute(
+            'SELECT vote_amount FROM vote_records WHERE topic_id = ? AND wallet_address = ?',
             [req.params.id, req.params.address]
         );
-
-        if (!record) {
-            return res.json(Response.success(null));
+        
+        // 如果已投票，直接返回投票数量
+        if (voteRecord) {
+            return res.json(Response.success({
+                has_voted: true,
+                vote_amount: voteRecord.vote_amount
+            }));
         }
-
-        // Query option information
-        const [[option]] = await pool.execute(
-            'SELECT option_text FROM vote_options WHERE id = ?',
-            [record.option_id]
+        
+        // 查询快照余额
+        const [[snapshot]] = await pool.execute(
+            'SELECT balance FROM balance_snapshots WHERE topic_id = ? AND wallet_address = ?',
+            [req.params.id, req.params.address]
         );
-
-        // Convert vote_amount to string
-        res.json(Response.success({
-            ...record,
-            vote_amount: record.vote_amount.toString(),
-            option_text: option.option_text
+        
+        // 如果有快照，返回快照余额
+        if (snapshot) {
+            return res.json(Response.success({
+                has_voted: false,
+                eligible_votes: snapshot.balance
+            }));
+        }
+        
+        // 如果没有快照，直接返回0
+        return res.json(Response.success({
+            has_voted: false,
+            eligible_votes: "0"
         }));
     } catch (error) {
-        console.error('Failed to get wallet vote record:', error);
-        res.status(400).json(Response.error(error.code ? error : ErrorCodes.SYSTEM_ERROR));
+        console.error('Failed to get eligible votes:', error);
+        res.status(500).json(Response.error(error.code ? error : ErrorCodes.DB_ERROR));
     }
 });
 
 const PORT = process.env.PORT || config.server.port;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    // 初始化定时任务
+    Scheduler.initScheduler();
 }); 
